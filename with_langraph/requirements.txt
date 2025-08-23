@@ -1,0 +1,10 @@
+streamlit>=1.35
+langchain>=0.2.10
+langchain-core>=0.2.10
+langchain-openai>=0.1.7
+langchain-community>=0.2.10
+langgraph>=0.2.21
+faiss-cpu>=1.8.0
+pydantic>=2.7
+pypdf>=4.2.0
+tiktoken>=0.7.0
