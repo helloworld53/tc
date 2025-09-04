@@ -1,13 +1,19 @@
+import asyncio
 from typing import Annotated, TypedDict, List, Dict, Any
+
 from langchain_core.messages import AnyMessage, HumanMessage, AIMessage, ToolMessage
 from langchain_openai import ChatOpenAI
 from langgraph.graph import StateGraph, END
 from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode
 from langchain_core.prompts import ChatPromptTemplate
-import streamlit as st
-import asyncio
-from mcp.client import connect
+
+# from fastmcp import Client
+# from langchain_mcp_adapters import mcp_tools_to_langchain  # <-- adapter
+# from langchain_mcp_adapters.tools import mcp_tools_to_langchain
+from mcp import ClientSession, StdioServerParameters
+from mcp.client.stdio import stdio_client
+from langchain_mcp_adapters.tools import load_mcp_tools
 
 # ---------- State ----------
 class State(TypedDict):
@@ -15,14 +21,14 @@ class State(TypedDict):
     messages: Annotated[List[AnyMessage], add_messages]
     tool_calls: List[Dict[str, Any]]
 
-# ---------- Models ----------
+# ---------- LLM ----------
 def get_llm():
     return ChatOpenAI(
         model="meta-llama/Llama-3-8b-chat-hf",
         temperature=0.2,
         streaming=True,
         base_url="https://api.together.xyz/v1",
-        api_key=st.secrets["OPENAI_API_KEY"],
+        api_key="your_together_api_key",  # replace with st.secrets in Streamlit
     )
 
 # ---------- Prompts ----------
@@ -34,14 +40,37 @@ answer_prompt = ChatPromptTemplate.from_messages([
 ])
 
 # ---------- MCP Tool Discovery ----------
-async def load_mcp_tools():
-    async with connect("rag-mcp") as client:
-        tools = await client.list_tools()
-        return tools
+# ---------- MCP Tool Discovery ----------
+async def load_mcp_tools_from_server():
+    server_params = StdioServerParameters(
+        command="python",
+        args=["rag_mcp.py"],   # ✅ your MCP server file
+    )
+
+    async with stdio_client(server_params) as (read, write):
+        async with ClientSession(read, write) as session:
+            await session.initialize()
+
+            tools = await load_mcp_tools(session)   # ✅ returns StructuredTools already
+            print(f"Discovered {len(tools)} tools from rag_mcp.py")
+            return tools
+
+
+
+
+
+
+
+
+# async def load_mcp_tools():
+#     client = Client("rag_mcp.py")   # your MCP server
+#     async with client:
+#         tools = await client.list_tools()
+#         print(f"Discovered {len(tools)} tools")
+#         return mcp_tools_to_langchain(client, tools)  # ✅ convert into LangChain StructuredTools
 
 # ---------- Nodes ----------
 def router(state: State):
-    # For now: always go through LLM with tools
     return "llm_with_tools"
 
 def llm_with_tools(state: State, tools):
@@ -71,11 +100,11 @@ def finalize(state: State):
 
 # ---------- Build graph ----------
 async def build_graph():
-    tools = await load_mcp_tools()
-    g = StateGraph(State)
+    tools =  await load_mcp_tools_from_server() 
 
-    g.add_node("llm_with_tools", lambda s: llm_with_tools(s, tools))
-    g.add_node("call_tools", ToolNode(tools))
+    g = StateGraph(State)
+    g.add_node("llm_with_tools", lambda s,tools=tools: llm_with_tools(s, tools))
+    g.add_node("call_tools", ToolNode(tools))  # ✅ now works because tools are StructuredTools
     g.add_node("finalize", finalize)
     g.add_node("router", router)
 
@@ -90,3 +119,15 @@ async def build_graph():
     g.add_edge("finalize", END)
 
     return g.compile()
+
+# ---------- Run test ----------
+async def main():
+    graph = await build_graph()
+    state = {"query": "Please calculate residency days from 2024-01-01 to 2024-03-01.", "messages": []}
+    result = graph.invoke(state)
+    print("Final messages:")
+    for msg in result["messages"]:
+        print(f"{msg.type.upper()}: {msg.content}")
+
+if __name__ == "__main__":
+    asyncio.run(main())

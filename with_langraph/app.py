@@ -84,3 +84,4 @@ with st.sidebar:
     st.markdown("- Try: *Calculate residency days from 2024-01-10 to 2024-05-20*")
     st.markdown("- Try: *Check Schengen 90/180 for two stays...*")
     st.markdown("- Try: *Estimate fees for a work visa, fast track*")
+
