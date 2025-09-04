@@ -1,6 +1,5 @@
 import asyncio
 from typing import Annotated, TypedDict, List, Dict, Any
-
 from langchain_core.messages import AnyMessage, HumanMessage, AIMessage, ToolMessage
 from langchain_openai import ChatOpenAI
 from langgraph.graph import StateGraph, END
@@ -8,9 +7,6 @@ from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode
 from langchain_core.prompts import ChatPromptTemplate
 import streamlit as st
-# from fastmcp import Client
-# from langchain_mcp_adapters import mcp_tools_to_langchain  # <-- adapter
-# from langchain_mcp_adapters.tools import mcp_tools_to_langchain
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 from langchain_mcp_adapters.tools import load_mcp_tools
@@ -40,7 +36,6 @@ answer_prompt = ChatPromptTemplate.from_messages([
 ])
 
 # ---------- MCP Tool Discovery ----------
-# ---------- MCP Tool Discovery ----------
 async def load_mcp_tools_from_server():
     server_params = StdioServerParameters(
         command="python",
@@ -54,20 +49,6 @@ async def load_mcp_tools_from_server():
             tools = await load_mcp_tools(session)   # ✅ returns StructuredTools already
             print(f"Discovered {len(tools)} tools from rag_mcp.py")
             return tools
-
-
-
-
-
-
-
-
-# async def load_mcp_tools():
-#     client = Client("rag_mcp.py")   # your MCP server
-#     async with client:
-#         tools = await client.list_tools()
-#         print(f"Discovered {len(tools)} tools")
-#         return mcp_tools_to_langchain(client, tools)  # ✅ convert into LangChain StructuredTools
 
 # ---------- Nodes ----------
 def router(state: State):
@@ -120,14 +101,19 @@ async def build_graph():
 
     return g.compile()
 
-# ---------- Run test ----------
-async def main():
+async def run_agent(query: str):
     graph = await build_graph()
-    state = {"query": "Please calculate residency days from 2024-01-01 to 2024-03-01.", "messages": []}
+    state = {"query": query, "messages": []}
     result = graph.invoke(state)
-    print("Final messages:")
-    for msg in result["messages"]:
-        print(f"{msg.type.upper()}: {msg.content}")
+    return result["messages"][-1].content
+# # ---------- Run test ----------
+# async def main():
+#     graph = await build_graph()
+#     state = {"query": "Please calculate residency days from 2024-01-01 to 2024-03-01.", "messages": []}
+#     result = graph.invoke(state)
+#     print("Final messages:")
+#     for msg in result["messages"]:
+#         print(f"{msg.type.upper()}: {msg.content}")
 
-if __name__ == "__main__":
-    asyncio.run(main())
+# if __name__ == "__main__":
+#     asyncio.run(main())
