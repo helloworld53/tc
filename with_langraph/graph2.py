@@ -7,7 +7,7 @@ from langgraph.graph import StateGraph, END
 from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode
 from langchain_core.prompts import ChatPromptTemplate
-
+import streamlit as st
 # from fastmcp import Client
 # from langchain_mcp_adapters import mcp_tools_to_langchain  # <-- adapter
 # from langchain_mcp_adapters.tools import mcp_tools_to_langchain
@@ -24,11 +24,11 @@ class State(TypedDict):
 # ---------- LLM ----------
 def get_llm():
     return ChatOpenAI(
-        model="meta-llama/Llama-3-8b-chat-hf",
+        model="deepseek-ai/DeepSeek-R1-Distill-Llama-70B-free",
         temperature=0.2,
         streaming=True,
         base_url="https://api.together.xyz/v1",
-        api_key="your_together_api_key",  # replace with st.secrets in Streamlit
+        api_key=st.secrets["OPENAI_API_KEY"],  # replace with st.secrets in Streamlit
     )
 
 # ---------- Prompts ----------
@@ -71,7 +71,7 @@ async def load_mcp_tools_from_server():
 
 # ---------- Nodes ----------
 def router(state: State):
-    return "llm_with_tools"
+    return state #"llm_with_tools"
 
 def llm_with_tools(state: State, tools):
     llm = get_llm().bind_tools(tools)
