@@ -1,5 +1,7 @@
+## graph2.py — React-style agent with LLM + Tools + MCP
 import asyncio
 from typing import Annotated, TypedDict, List, Dict, Any
+
 from langchain_core.messages import AnyMessage, HumanMessage, AIMessage, ToolMessage
 from langchain_openai import ChatOpenAI
 from langgraph.graph import StateGraph, END
@@ -7,15 +9,18 @@ from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode
 from langchain_core.prompts import ChatPromptTemplate
 import streamlit as st
+
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 from langchain_mcp_adapters.tools import load_mcp_tools
+
 
 # ---------- State ----------
 class State(TypedDict):
     query: str
     messages: Annotated[List[AnyMessage], add_messages]
     tool_calls: List[Dict[str, Any]]
+
 
 # ---------- LLM ----------
 def get_llm():
@@ -27,6 +32,7 @@ def get_llm():
         api_key=st.secrets["OPENAI_API_KEY"],  # replace with st.secrets in Streamlit
     )
 
+
 # ---------- Prompts ----------
 answer_prompt = ChatPromptTemplate.from_messages([
     ("system", "You are a careful legal assistant for Lithuanian immigration. "
@@ -34,6 +40,7 @@ answer_prompt = ChatPromptTemplate.from_messages([
                "Cite sources with [S#] when possible."),
     ("human", "Question: {q}\n\nTool/context data:\n{context}")
 ])
+
 
 # ---------- MCP Tool Discovery ----------
 async def load_mcp_tools_from_server():
@@ -45,20 +52,22 @@ async def load_mcp_tools_from_server():
     async with stdio_client(server_params) as (read, write):
         async with ClientSession(read, write) as session:
             await session.initialize()
-
             tools = await load_mcp_tools(session)   # ✅ returns StructuredTools already
             print(f"Discovered {len(tools)} tools from rag_mcp.py")
             return tools
 
+
 # ---------- Nodes ----------
 def router(state: State):
-    return state #"llm_with_tools"
+    return "llm_with_tools"
 
-def llm_with_tools(state: State, tools):
+
+async def llm_with_tools(state: State, tools):
     llm = get_llm().bind_tools(tools)
-    ai = llm.invoke(state["messages"] + [HumanMessage(content=state["query"])])
+    ai = await llm.ainvoke(state["messages"] + [HumanMessage(content=state["query"])])
     state["messages"].append(ai)
     return state
+
 
 def should_continue_tool_loop(state: State):
     last = state["messages"][-1]
@@ -66,7 +75,8 @@ def should_continue_tool_loop(state: State):
         return "call_tools"
     return "finalize"
 
-def finalize(state: State):
+
+async def finalize(state: State):
     llm = get_llm()
     tool_context = ""
     for m in state["messages"]:
@@ -75,17 +85,20 @@ def finalize(state: State):
     if not tool_context.strip():
         return state
     msg = answer_prompt.format_messages(q=state["query"], context=tool_context)
-    ai = llm.invoke(msg)
+    ai = await llm.ainvoke(msg)
     state["messages"].append(ai)
     return state
 
+
 # ---------- Build graph ----------
 async def build_graph():
-    tools =  await load_mcp_tools_from_server() 
+    tools = await load_mcp_tools_from_server()
 
     g = StateGraph(State)
-    g.add_node("llm_with_tools", lambda s,tools=tools: llm_with_tools(s, tools))
-    g.add_node("call_tools", ToolNode(tools))  # ✅ now works because tools are StructuredTools
+    g.add_node("llm_with_tools", lambda s, tools=tools: asyncio.run(llm_with_tools(s, tools)))
+
+    # g.add_node("llm_with_tools", lambda s, tools=tools: llm_with_tools(s, tools))
+    g.add_node("call_tools", ToolNode(tools))  # ✅ StructuredTools already
     g.add_node("finalize", finalize)
     g.add_node("router", router)
 
@@ -101,19 +114,19 @@ async def build_graph():
 
     return g.compile()
 
+
+# ---------- Run agent ----------
 async def run_agent(query: str):
     graph = await build_graph()
     state = {"query": query, "messages": []}
-    result = graph.invoke(state)
+    result = await graph.ainvoke(state)   # ✅ async version
     return result["messages"][-1].content
-# # ---------- Run test ----------
-# async def main():
-#     graph = await build_graph()
-#     state = {"query": "Please calculate residency days from 2024-01-01 to 2024-03-01.", "messages": []}
-#     result = graph.invoke(state)
-#     print("Final messages:")
-#     for msg in result["messages"]:
-#         print(f"{msg.type.upper()}: {msg.content}")
 
+
+# ---------- CLI Test ----------
 # if __name__ == "__main__":
+#     async def main():
+#         answer = await run_agent("Please calculate residency days from 2024-01-01 to 2024-03-01.")
+#         print("Answer:", answer)
+
 #     asyncio.run(main())
